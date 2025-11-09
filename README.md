@@ -2,7 +2,7 @@
 
 This small program provides a minimal `main` that accepts two arguments:
 
-    SpeechFiltering.exe <input.(wav|mp3)> <output>
+    SpeechFiltering.exe <input.(wav|mp3)>
 
 - If the input file has extension `.wav` the program calls `processWAV` (simple validation + copy).
 - If the input file has extension `.mp3` the program calls `processMP3`.
