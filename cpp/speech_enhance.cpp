@@ -7,7 +7,9 @@ namespace speech_enhance {
 
 void applySpectralSubtraction(AudioData& audio, 
                              const spectral::STFTParams& stftParams,
-                             const SpectralSubtractionParams& params) {
+                             const SpectralSubtractionParams& params,
+                             const std::vector<bool>& voiceActivity)
+{
     // Calculate number of frames for noise estimation
     int framesForNoise = static_cast<int>(params.noiseEstimateSeconds * 
                                          stftParams.sampleRate / stftParams.hopSize);
@@ -114,7 +116,7 @@ void applyWienerFilter(AudioData& audio,
             }
         });
 }
-
+//Tried using VAD to improve noise estimation, but results were not significantly better, maybe even worse.
 std::vector<bool> detectVoiceActivity(const AudioData& audio,
                                     const spectral::STFTParams& stftParams,
                                     float energyThreshold) {

@@ -61,11 +61,11 @@ enum class ProcessingMode {
     Hybrid                // Time-domain pre-filter + spectral processing
 };
 
-// Replace the existing processAudioData function with this:
-static void processAudioData(AudioData& audio, ProcessingMode mode = ProcessingMode::Hybrid) {
+//for now, we always use Hybrid
+static void processAudioData(AudioData& audio/*, ProcessingMode mode = ProcessingMode::Hybrid*/) {
     std::cout << "Processing with mode: ";
     
-    switch(mode) {
+    /*switch(mode) {
         case ProcessingMode::TimeDomain:
             std::cout << "Time-Domain Bandpass\n";
             filters::applySpeechBandpass(audio);
@@ -90,25 +90,27 @@ static void processAudioData(AudioData& audio, ProcessingMode mode = ProcessingM
         }
         
         case ProcessingMode::Hybrid: {
-            std::cout << "Hybrid (Spectral + Wiener + Time-Domain)\n";
+       */     std::cout << "Hybrid (Time-Domain + SpectralSubtraction + Wiener)\n";
 
+            // First: time-domain bandpass filtering
+            filters::applySpeechBandpass(audio);
+            // Next: Spectral Subtraction
+            std::vector<bool> emptyVAD;
             spectral::STFTParams stftParams(2048, 512, audio.sampleRate);
             speech_enhance::SpectralSubtractionParams ssParams;
             ssParams.overSubtractionFactor = 1.5f;
             ssParams.spectralFloor = 0.02f;
-            speech_enhance::applySpectralSubtraction(audio, stftParams, ssParams);
+            speech_enhance::applySpectralSubtraction(audio, stftParams, ssParams, emptyVAD);
             
-            // Second: Wiener filter for additional noise reduction and speech enhancement
+            // Finally: Wiener Filtering
             speech_enhance::WienerFilterParams wfParams;
             wfParams.priorSNR = 0.98f;  // Strong temporal smoothing
             wfParams.noiseEstimateSeconds = 0.3f;
             speech_enhance::applyWienerFilter(audio, stftParams, wfParams);
             
-            filters::applySpeechBandpass(audio);
-
-            break;
-        }
-    }
+            //break;
+       // }
+    //}
 }
 
 // Write WAV file from AudioData
@@ -227,7 +229,7 @@ static bool processWAV(const std::string &input, const std::string &output, Proc
                     }
 
                     // Process the audio data
-                    processAudioData(audio, mode);
+                    processAudioData(audio/*, mode*/);
 
                     // Write processed data to output WAV
                     if (!writeWAVFile(output, audio)) {
@@ -297,7 +299,7 @@ static bool processMP3(const std::string &input, const std::string &output, Proc
     }
 
     // Process the audio data through our pipeline
-    processAudioData(audio, mode);
+    processAudioData(audio/*, mode*/);
 
     // Write processed data to output WAV
     if (!writeWAVFile(output, audio)) {

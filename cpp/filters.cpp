@@ -68,10 +68,10 @@ void BiquadFilter::reset() {
 
 void applySpeechBandpass(AudioData& audio) {
     // Extreme band-pass: strongly attenuate outside 500-1000 Hz
-    const float lowCutHz = 500.0f;
-    const float highCutHz = 1000.0f;
+    const float lowCutHz = 80.0f;
+    const float highCutHz = 3000.0f;
     const float Q = 0.8f; // moderate Q to reduce ringing
-    const int stages = 3; // 3 cascaded stages -> ~6th-order response
+    const int stages = 10; // 10 cascaded stages
 
     // Process per-channel to keep filter states separate per channel
     const uint16_t channels = audio.channels ? audio.channels : 1;

@@ -21,7 +21,8 @@ struct SpectralSubtractionParams {
 // Apply spectral subtraction
 void applySpectralSubtraction(AudioData& audio, 
                                const spectral::STFTParams& stftParams,
-                               const SpectralSubtractionParams& params);
+                               const SpectralSubtractionParams& params,
+                               const std::vector<bool>& voiceActivity = {});
 
 // Wiener filter parameters
 struct WienerFilterParams {
