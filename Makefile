@@ -1,10 +1,11 @@
 # Compiler settings
 CXX = g++
-CXXFLAGS = -std=c++11 -Wall -O3 -DUSE_MINIMP3 -Iexternal/minimp3 -Iexternal/kissfft
-LDFLAGS = -lm
+CXXFLAGS = -std=c++17 -Wall -O3 -DUSE_MINIMP3 -Iexternal/minimp3 -Iexternal/kissfft \
+           -Iexternal/libtorch/include -Iexternal/libtorch/include/torch/csrc/api/include
+LDFLAGS = -Lexternal/libtorch/lib -ltorch -lc10 -lm
 
 # Directories
-SRC_DIR = src
+SRC_DIR = cpp
 EXTERNAL_DIR = external
 
 # Source files
