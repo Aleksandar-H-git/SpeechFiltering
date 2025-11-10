@@ -8,14 +8,19 @@
 #include <memory>
 #include <cstring>
 
+
+
 #define MINIMP3_IMPLEMENTATION
 #include "../external/minimp3/minimp3.h"
+
 
 #include "audio_data.h"
 #include "filters.h"
 #include "spectral.h"
 #include "speech_enhance.h"
 
+#include <torch/script.h>
+#include <torch/torch.h>
 // WAV file structures
 #pragma pack(push, 1)
 struct WAVHeader {
@@ -61,37 +66,126 @@ enum class ProcessingMode {
     Hybrid                // Time-domain pre-filter + spectral processing
 };
 
+static torch::jit::script::Module loadDenoiserModel(const std::string& modelPath) {
+    try {
+        torch::jit::script::Module module = torch::jit::load(modelPath);
+        module.eval();
+        std::cout << "✅ Loaded TorchScript model: " << modelPath << "\n";
+        return module;
+    } catch (const c10::Error& e) {
+        std::cerr << "❌ Failed to load model: " << e.what() << "\n";
+        throw;
+    }
+}
+
+// Run model inference on separate channels and write result back into audio.samples
+static void runDenoiser(torch::jit::script::Module& model, AudioData& audio) {
+    // Handle mono audio
+    if (audio.channels == 1) {
+        // Convert int16_t samples to float32 normalized [-1,1]
+        std::vector<float> floatSamples(audio.samples.size());
+        for (size_t i = 0; i < audio.samples.size(); ++i)
+            floatSamples[i] = static_cast<float>(audio.samples[i]) / 32768.0f;
+
+        // Create tensor (1, 1, N)
+        torch::Tensor input = torch::from_blob(floatSamples.data(), {(int64_t)1, 1, (int64_t)audio.samples.size()}, torch::kFloat32).clone();
+
+        // Run the model
+        torch::NoGradGuard noGrad;
+        torch::Tensor output = model.forward({input}).toTensor();
+
+        // Convert back to int16_t
+        output = output.squeeze().clamp(-1.0, 1.0);
+        output = output * 32768.0f;
+        auto outVec = output.to(torch::kCPU).to(torch::kInt16).contiguous();
+
+        audio.samples.resize(outVec.numel());
+        std::memcpy(audio.samples.data(), outVec.data_ptr<int16_t>(), outVec.numel() * sizeof(int16_t));
+
+        std::cout << "✅ Model inference done (mono, " << audio.samples.size() << " samples)\n";
+    }
+    else {
+        // Handle multi-channel audio: process each channel separately
+        size_t samplesPerChannel = audio.samples.size() / audio.channels;
+        std::vector<int16_t> processedSamples(audio.samples.size());
+
+        for (uint16_t ch = 0; ch < audio.channels; ++ch) {
+            // Extract channel data
+            std::vector<float> floatSamples(samplesPerChannel);
+            for (size_t i = 0; i < samplesPerChannel; ++i) {
+                floatSamples[i] = static_cast<float>(audio.samples[i * audio.channels + ch]) / 32768.0f;
+            }
+
+            // Create tensor (1, 1, N) for this channel
+            torch::Tensor input = torch::from_blob(floatSamples.data(), {(int64_t)1, 1, (int64_t)samplesPerChannel}, torch::kFloat32).clone();
+
+            // Run the model
+            torch::NoGradGuard noGrad;
+            torch::Tensor output = model.forward({input}).toTensor();
+
+            // Convert back to int16_t
+            output = output.squeeze().clamp(-1.0, 1.0);
+            output = output * 32768.0f;
+            auto outVec = output.to(torch::kCPU).to(torch::kInt16).contiguous();
+
+            // Write processed channel back to interleaved buffer
+            for (int64_t i = 0; i < outVec.numel(); ++i) {
+                processedSamples[i * audio.channels + ch] = outVec[i].item<int16_t>();
+            }
+
+            std::cout << "✅ Channel " << (ch + 1) << "/" << audio.channels << " inference done\n";
+        }
+
+        audio.samples = std::move(processedSamples);
+        std::cout << "✅ Model inference completed for all " << audio.channels << " channels\n";
+    }
+}
+
+// Downsample audio to 16kHz using simple averaging
+static void downsampleTo16kHz(AudioData& audio) {
+    if (audio.sampleRate == 16000) {
+        std::cout << "Audio already at 16kHz, skipping downsampling\n";
+        return;
+    }
+
+    if (audio.sampleRate < 16000) {
+        std::cerr << "Audio sample rate (" << audio.sampleRate << " Hz) is already below 16kHz\n";
+        return;
+    }
+
+    // Calculate downsampling factor
+    int downsamplingFactor = audio.sampleRate / 16000;
+    std::vector<int16_t> downsampledSamples;
+    downsampledSamples.reserve(audio.samples.size() / downsamplingFactor);
+
+    // Simple averaging downsampling
+    for (size_t i = 0; i < audio.samples.size(); i += downsamplingFactor) {
+        int32_t sum = 0;
+        int count = 0;
+        
+        for (int j = 0; j < downsamplingFactor && i + j < audio.samples.size(); ++j) {
+            sum += audio.samples[i + j];
+            count++;
+        }
+        
+        int16_t averaged = static_cast<int16_t>(sum / count);
+        downsampledSamples.push_back(averaged);
+    }
+
+    // Replace audio samples with downsampled version
+    audio.samples = std::move(downsampledSamples);
+    audio.sampleRate = 16000;
+
+    std::cout << "Downsampled to 16kHz (" << audio.samples.size() << " samples)\n";
+}
+
 //for now, we always use Hybrid
-static void processAudioData(AudioData& audio/*, ProcessingMode mode = ProcessingMode::Hybrid*/) {
+static void processAudioData(AudioData& audio) {
     std::cout << "Processing with mode: ";
     
-    /*switch(mode) {
-        case ProcessingMode::TimeDomain:
-            std::cout << "Time-Domain Bandpass\n";
-            filters::applySpeechBandpass(audio);
-            break;
+   
+     std::cout << "Hybrid (Time-Domain + SpectralSubtraction + Wiener)\n";
             
-        case ProcessingMode::SpectralSubtraction: {
-            std::cout << "Spectral Subtraction\n";
-            spectral::STFTParams stftParams(2048, 512, audio.sampleRate);
-            speech_enhance::SpectralSubtractionParams ssParams;
-            ssParams.overSubtractionFactor = 2.0f;  // More aggressive
-            ssParams.spectralFloor = 0.02f;
-            speech_enhance::applySpectralSubtraction(audio, stftParams, ssParams);
-            break;
-        }
-        
-        case ProcessingMode::WienerFilter: {
-            std::cout << "Wiener Filter\n";
-            spectral::STFTParams stftParams(2048, 512, audio.sampleRate);
-            speech_enhance::WienerFilterParams wfParams;
-            speech_enhance::applyWienerFilter(audio, stftParams, wfParams);
-            break;
-        }
-        
-        case ProcessingMode::Hybrid: {
-       */     std::cout << "Hybrid (Time-Domain + SpectralSubtraction + Wiener)\n";
-
             // First: time-domain bandpass filtering
             filters::applySpeechBandpass(audio);
             // Next: Spectral Subtraction
@@ -107,11 +201,12 @@ static void processAudioData(AudioData& audio/*, ProcessingMode mode = Processin
             wfParams.priorSNR = 0.98f;  // Strong temporal smoothing
             wfParams.noiseEstimateSeconds = 0.3f;
             speech_enhance::applyWienerFilter(audio, stftParams, wfParams);
-            
-            //break;
-       // }
-    //}
-}
+
+            std::cout << "Processing with TorchScript model (LibTorch)...\n";
+            static torch::jit::script::Module denoiser = loadDenoiserModel("python\\speech_denoiser.pt");
+            downsampleTo16kHz(audio);
+            runDenoiser(denoiser, audio);
+    }
 
 // Write WAV file from AudioData
 static bool writeWAVFile(const std::string& filename, const AudioData& audio) {

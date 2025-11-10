@@ -4,6 +4,24 @@ import torch
 import torchaudio
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
+import soundfile as sf  # direct WAV loader
+
+# -----------------------------
+# Utility: Safe WAV loader
+# -----------------------------
+def load_wav(path, target_sr=16000):
+    """Load a WAV file and return (tensor, sample_rate)."""
+    data, sr = sf.read(path, dtype='float32')
+    if data.ndim == 1:  # mono
+        data = data[None, :]  # shape (1, n_samples)
+    else:
+        data = data.T  # (channels, n_samples)
+    tensor = torch.tensor(data)
+    if sr != target_sr:
+        tensor = torchaudio.functional.resample(tensor, sr, target_sr)
+        sr = target_sr
+    return tensor, sr
+
 
 # -----------------------------
 # Dataset: mixes clean speech + noise
@@ -20,12 +38,10 @@ class SpeechDenoiseDataset(Dataset):
 
     def __getitem__(self, idx):
         clean_path = self.clean_files[idx]
-        clean, sr = torchaudio.load(clean_path)
-        clean = torchaudio.functional.resample(clean, sr, self.sample_rate)
+        clean, sr = load_wav(clean_path, self.sample_rate)
 
         noise_path = random.choice(self.noise_files)
-        noise, nsr = torchaudio.load(noise_path)
-        noise = torchaudio.functional.resample(noise, nsr, self.sample_rate)
+        noise, nsr = load_wav(noise_path, self.sample_rate)
 
         # Trim or pad to segment_len
         clean = clean[:, :self.segment_len]
@@ -69,10 +85,11 @@ class ConvDenoiser(nn.Module):
 
 
 # -----------------------------
-# Training loop
+# Training loop + TorchScript export
 # -----------------------------
-def train_model(clean_dir="data/clean", noise_dir="data/noise", epochs=20, batch_size=8, lr=1e-3):
+def train_model(clean_dir="data/clean", noise_dir="data/noise", epochs=100, batch_size=8, lr=1e-3):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Training on {device}")
 
     dataset = SpeechDenoiseDataset(clean_dir, noise_dir)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
@@ -85,7 +102,7 @@ def train_model(clean_dir="data/clean", noise_dir="data/noise", epochs=20, batch
         total_loss = 0.0
         for noisy, clean in dataloader:
             noisy, clean = noisy.to(device), clean.to(device)
-            noisy = noisy[:, 0:1, :]  # make sure it’s mono
+            noisy = noisy[:, 0:1, :]  # ensure mono
             clean = clean[:, 0:1, :]
 
             output = model(noisy)
@@ -97,8 +114,17 @@ def train_model(clean_dir="data/clean", noise_dir="data/noise", epochs=20, batch
 
         print(f"Epoch {epoch+1}/{epochs} | Loss: {total_loss/len(dataloader):.6f}")
 
-    torch.save(model.state_dict(), "speech_denoiser.pt")
-    print("✅ Model saved to speech_denoiser.pt")
+    # Save regular PyTorch weights
+    torch.save(model.state_dict(), "speech_denoiser_state.pth")
+    print("✅ Model weights saved to speech_denoiser_state.pth")
+
+    # Export to TorchScript (for C++)
+    model.eval()
+    example_input = torch.randn(1, 1, 32000)
+    traced = torch.jit.trace(model.cpu(), example_input)
+    traced.save("speech_denoiser.pt")
+    print("✅ TorchScript model exported to speech_denoiser.pt (ready for LibTorch)")
+
 
 if __name__ == "__main__":
     train_model()

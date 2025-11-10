@@ -1,55 +1,38 @@
-# Compiler settings
-CXX = g++
-CXXFLAGS = -std=c++17 -Wall -O3 -DUSE_MINIMP3 -Iexternal/minimp3 -Iexternal/kissfft \
-           -Iexternal/libtorch/include -Iexternal/libtorch/include/torch/csrc/api/include
-LDFLAGS = -Lexternal/libtorch/lib -ltorch -lc10 -lm
+# Use MSVC compiler
+CXX = cl
+CFLAGS = /std:c++17 /EHsc /O2 /Wall /D USE_MINIMP3 /I external\minimp3 /I external\kissfft /I external\libtorch\include /I external\libtorch\include\torch\csrc\api\include
+LDFLAGS = /link /LIBPATH:external\libtorch\lib torch_cpu.lib torch.lib c10.lib
 
 # Directories
 SRC_DIR = cpp
 EXTERNAL_DIR = external
 
-# Source files
-SRCS = $(SRC_DIR)/main.cpp \
-       $(SRC_DIR)/filters.cpp \
-       $(SRC_DIR)/spectral.cpp \
-       $(SRC_DIR)/speech_enhance.cpp \
-       $(EXTERNAL_DIR)/kissfft/kiss_fft.c
-
-# Object files
-OBJS = $(SRCS:.cpp=.o)
-OBJS := $(OBJS:.c=.o)
-
-# Target executable
+# Files
+SRCS = $(SRC_DIR)\main.cpp $(SRC_DIR)\filters.cpp $(SRC_DIR)\spectral.cpp $(SRC_DIR)\speech_enhance.cpp $(EXTERNAL_DIR)\kissfft\kiss_fft.c
+OBJS = main.obj filters.obj spectral.obj speech_enhance.obj kiss_fft.obj
 TARGET = SpeechFiltering.exe
 
 # Default target
 all: $(TARGET)
 
 $(TARGET): $(OBJS)
-	$(CXX) $(OBJS) -o $(TARGET) $(LDFLAGS)
+	$(CXX) $(CFLAGS) /Fe:$(TARGET) $(OBJS) $(LDFLAGS)
 
-# Compile C++ files
-$(SRC_DIR)/%.o: $(SRC_DIR)/%.cpp
-	$(CXX) $(CXXFLAGS) -c $< -o $@
+main.obj:
+	$(CXX) /c $(CFLAGS) $(SRC_DIR)\main.cpp /Fo:main.obj
 
-# Compile C files (for kiss_fft.c)
-$(EXTERNAL_DIR)/kissfft/%.o: $(EXTERNAL_DIR)/kissfft/%.c
-	$(CXX) $(CXXFLAGS) -c $< -o $@
+filters.obj:
+	$(CXX) /c $(CFLAGS) $(SRC_DIR)\filters.cpp /Fo:filters.obj
 
-# Force rebuild
-FORCE:
+spectral.obj:
+	$(CXX) /c $(CFLAGS) $(SRC_DIR)\spectral.cpp /Fo:spectral.obj
 
-# Clean build artifacts
+speech_enhance.obj:
+	$(CXX) /c $(CFLAGS) $(SRC_DIR)\speech_enhance.cpp /Fo:speech_enhance.obj
+
+kiss_fft.obj:
+	$(CXX) /c $(CFLAGS) $(EXTERNAL_DIR)\kissfft\kiss_fft.c /Fo:kiss_fft.obj
+
 clean:
-	-powershell -Command "if (Test-Path $(TARGET)) { Remove-Item -Force $(TARGET) }"
-	-powershell -Command "Get-ChildItem -Path $(SRC_DIR) -Filter *.o -Recurse | Remove-Item -Force"
-	-powershell -Command "Get-ChildItem -Path $(EXTERNAL_DIR) -Filter *.o -Recurse | Remove-Item -Force"
-
-# Help target
-help:
-	@echo Available targets:
-	@echo   all     - Build the speech filtering application (default)
-	@echo   clean   - Remove all build artifacts
-	@echo   help    - Show this help message
-
-.PHONY: all clean help FORCE
+	del /Q *.obj
+	del /Q $(TARGET)
