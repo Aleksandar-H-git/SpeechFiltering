@@ -19,19 +19,19 @@ $(TARGET): $(OBJS)
 	$(CXX) $(CFLAGS) /Fe:$(TARGET) $(OBJS) $(LDFLAGS)
 
 main.obj:
-	$(CXX) /c $(CFLAGS) $(SRC_DIR)\main.cpp /Fo:main.obj
+	$(CXX) /c $(CFLAGS) $(SRC_DIR)\main.cpp /Fo:main.obj >NUL 2>&1
 
 filters.obj:
-	$(CXX) /c $(CFLAGS) $(SRC_DIR)\filters.cpp /Fo:filters.obj
+	$(CXX) /c $(CFLAGS) $(SRC_DIR)\filters.cpp /Fo:filters.obj >NUL 2>&1
 
 spectral.obj:
-	$(CXX) /c $(CFLAGS) $(SRC_DIR)\spectral.cpp /Fo:spectral.obj
+	$(CXX) /c $(CFLAGS) $(SRC_DIR)\spectral.cpp /Fo:spectral.obj >NUL 2>&1
 
 speech_enhance.obj:
-	$(CXX) /c $(CFLAGS) $(SRC_DIR)\speech_enhance.cpp /Fo:speech_enhance.obj
+	$(CXX) /c $(CFLAGS) $(SRC_DIR)\speech_enhance.cpp /Fo:speech_enhance.obj >NUL 2>&1
 
 kiss_fft.obj:
-	$(CXX) /c $(CFLAGS) $(EXTERNAL_DIR)\kissfft\kiss_fft.c /Fo:kiss_fft.obj
+	$(CXX) /c $(CFLAGS) $(EXTERNAL_DIR)\kissfft\kiss_fft.c /Fo:kiss_fft.obj >NUL 2>&1
 
 clean:
 	del /Q *.obj
