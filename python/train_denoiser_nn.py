@@ -55,7 +55,8 @@ class SpeechDenoiseDataset(Dataset):
         snr_db = random.uniform(0, 15)
         clean_power = clean.pow(2).mean()
         noise_power = noise.pow(2).mean()
-        noise = noise * torch.sqrt(clean_power / (noise_power * 10**(snr_db / 10)))
+        eps = 1e-8
+        noise = noise * torch.sqrt(clean_power / ((noise_power + eps) * 10**(snr_db / 10)))
 
         noisy = clean + noise
         return noisy, clean
@@ -87,7 +88,7 @@ class ConvDenoiser(nn.Module):
 # -----------------------------
 # Training loop + TorchScript export
 # -----------------------------
-def train_model(clean_dir="data/clean", noise_dir="data/noise", epochs=100, batch_size=8, lr=1e-3):
+def train_model(clean_dir="data/clean", noise_dir="data/noise", epochs=200, batch_size=8, lr=5e-4):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Training on {device}")
 
@@ -96,7 +97,7 @@ def train_model(clean_dir="data/clean", noise_dir="data/noise", epochs=100, batc
 
     model = ConvDenoiser().to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    criterion = nn.L1Loss()
+    criterion = nn.MSELoss()
 
     for epoch in range(epochs):
         total_loss = 0.0
